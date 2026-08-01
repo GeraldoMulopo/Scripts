@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=PortalMaster
+Comment=Gerador de QR Code
+Exec=/home/geraldo/.local/bin/portalmaster
+Icon=portalmaster
+Terminal=false
+Categories=Graphics;Utility;
+StartupNotify=true

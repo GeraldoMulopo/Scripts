@@ -1,0 +1,362 @@
+#!/usr/bin/env bash
+# PortalMaster — Gerador de QR Code
+# A GUI completa corre em Python/Tk, lançada por este script bash.
+exec python3 - "$@" <<'PYEOF'
+#!/usr/bin/env python3
+"""PortalMaster — Gerador de QR Code (GUI Tk)."""
+
+import os
+import subprocess
+import tkinter as tk
+from tkinter import colorchooser, filedialog, messagebox, ttk
+
+import qrcode
+from PIL import Image, ImageDraw, ImageTk
+
+APP = "PortalMaster"
+BASE = os.path.expanduser("~/.local/share/portalmaster")
+HIST = os.path.join(BASE, "historia.log")
+PICS = os.path.expanduser("~/Pictures") if os.path.isdir(os.path.expanduser("~/Pictures")) else os.path.expanduser("~")
+
+FORMATS = ["PNG", "JPG", "BMP", "ICO"]
+EXT = {"PNG": ".png", "JPG": ".jpg", "BMP": ".bmp", "ICO": ".ico"}
+NIVEIS = {"L": qrcode.constants.ERROR_CORRECT_L,
+          "M": qrcode.constants.ERROR_CORRECT_M,
+          "Q": qrcode.constants.ERROR_CORRECT_Q,
+          "H": qrcode.constants.ERROR_CORRECT_H}
+
+
+class PortalMaster(tk.Tk):
+
+    def __init__(self):
+        super().__init__()
+        self.title(f"{APP} — Gerador de QR Code")
+        self.minsize(760, 560)
+        self.cor_qr = "#000000"
+        self.cor_fundo = "#FFFFFF"
+        self.logo_path = None
+        self._tkimg = None
+        self.var_saida = tk.StringVar()
+        self.var_logo = tk.StringVar()
+        self.var_transp = tk.BooleanVar()
+        self.var_logo_chk = tk.BooleanVar()
+
+        os.makedirs(BASE, exist_ok=True)
+
+        self._construir_interface()
+
+    # ------------------------------------------------------------------ UI
+    def _construir_interface(self):
+        esq = ttk.Frame(self, padding=12)
+        esq.pack(side="left", fill="both", expand=True)
+        dirf = ttk.Frame(self, padding=12)
+        dirf.pack(side="right", fill="both", expand=True)
+
+        # --- Conteúdo
+        f = ttk.LabelFrame(esq, text="Conteúdo (texto ou URL)", padding=8)
+        f.pack(fill="x")
+        self.entry_texto = ttk.Entry(f)
+        self.entry_texto.pack(fill="x")
+        self.entry_texto.bind("<KeyRelease>", self._atualizar_preview)
+
+        # --- Opções
+        f = ttk.LabelFrame(esq, text="Opções", padding=8)
+        f.pack(fill="x", pady=(8, 0))
+
+        linha = ttk.Frame(f)
+        linha.pack(fill="x")
+        ttk.Label(linha, text="Formato:").pack(side="left")
+        self.combo_formato = ttk.Combobox(linha, values=FORMATS, state="readonly", width=6)
+        self.combo_formato.set("PNG")
+        self.combo_formato.pack(side="left", padx=(4, 16))
+        self.combo_formato.bind("<<ComboboxSelected>>", self._mudar_formato)
+        ttk.Label(linha, text="Correção:").pack(side="left")
+        self.combo_nivel = ttk.Combobox(linha, values=list(NIVEIS), state="readonly", width=4)
+        self.combo_nivel.set("M")
+        self.combo_nivel.pack(side="left", padx=(4, 0))
+        self.combo_nivel.bind("<<ComboboxSelected>>", self._atualizar_preview)
+
+        linha = ttk.Frame(f)
+        linha.pack(fill="x", pady=(6, 0))
+        ttk.Label(linha, text="Tamanho (px):").pack(side="left")
+        self.spin_tamanho = ttk.Spinbox(linha, from_=64, to=4096, increment=32, width=7)
+        self.spin_tamanho.set("512")
+        self.spin_tamanho.pack(side="left", padx=(4, 16))
+        self.spin_tamanho.bind("<KeyRelease>", self._atualizar_preview)
+        ttk.Label(linha, text="Escala (módulos):").pack(side="left")
+        self.slider_escala = ttk.Scale(f, from_=1, to=40, command=self._atualizar_preview)
+        self.slider_escala.set(10)
+        self.slider_escala.pack(fill="x", pady=(4, 0))
+
+        linha = ttk.Frame(f)
+        linha.pack(fill="x", pady=(6, 0))
+        ttk.Label(linha, text="Margem (quiet zone):").pack(side="left")
+        self.slider_margem = ttk.Scale(linha, from_=0, to=12, command=self._atualizar_preview)
+        self.slider_margem.set(4)
+        self.slider_margem.pack(side="left", fill="x", expand=True, padx=(4, 0))
+
+        # --- Cores
+        f = ttk.LabelFrame(esq, text="Cores", padding=8)
+        f.pack(fill="x", pady=(8, 0))
+        self.btn_cor_qr = tk.Button(f, text="Cor do QR", width=14, relief="ridge", bd=2,
+                                    bg=self.cor_qr, fg="#FFFFFF",
+                                    command=lambda: self._escolher_cor("qr"))
+        self.btn_cor_qr.pack(side="left")
+        self.btn_cor_fundo = tk.Button(f, text="Cor do fundo", width=14, relief="ridge", bd=2,
+                                       bg=self.cor_fundo, fg="#000000",
+                                       command=lambda: self._escolher_cor("fundo"))
+        self.btn_cor_fundo.pack(side="left", padx=(8, 0))
+
+        self.chk_transp = ttk.Checkbutton(f, text="Fundo transparente (só PNG)",
+                                          variable=self.var_transp,
+                                          command=self._atualizar_preview)
+        self.chk_transp.pack(side="left", padx=(12, 0))
+
+        # --- Logo
+        f = ttk.LabelFrame(esq, text="Logo no centro", padding=8)
+        f.pack(fill="x", pady=(8, 0))
+        self.chk_logo = ttk.Checkbutton(f, text="Inserir logo", variable=self.var_logo_chk,
+                                        command=self._atualizar_preview)
+        self.chk_logo.pack(side="left")
+        self.entry_logo = ttk.Entry(f, textvariable=self.var_logo)
+        self.entry_logo.pack(side="left", fill="x", expand=True, padx=(8, 4))
+        self.entry_logo.bind("<KeyRelease>", self._mudar_logo)
+        ttk.Button(f, text="Escolher…", command=self._escolher_logo).pack(side="left")
+
+        # --- Saída
+        f = ttk.LabelFrame(esq, text="Guardar em", padding=8)
+        f.pack(fill="x", pady=(8, 0))
+        self.entry_saida = ttk.Entry(f, textvariable=self.var_saida)
+        self.entry_saida.pack(side="left", fill="x", expand=True)
+        ttk.Button(f, text="…", width=3, command=self._escolher_saida).pack(side="left", padx=(4, 0))
+
+        # --- Botões
+        b = ttk.Frame(esq)
+        b.pack(fill="x", pady=(12, 0))
+        ttk.Button(b, text="Salvar", command=self.salvar).pack(side="left")
+        ttk.Button(b, text="Histórico", command=self._ver_historico).pack(side="left", padx=(8, 0))
+        ttk.Button(b, text="Sair", command=self.destroy).pack(side="right")
+
+        # --- Preview
+        self.canvas = tk.Canvas(dirf, width=400, height=400, bg="#d8d8d8", highlightthickness=1,
+                                highlightbackground="#999999")
+        self.canvas.pack(fill="both", expand=True)
+        self._desenhar_xadrez()
+
+        self._atualizar_preview()
+
+    def _desenhar_xadrez(self):
+        c = 12
+        for x in range(0, 400, c):
+            for y in range(0, 400, c):
+                if (x // c + y // c) % 2 == 0:
+                    self.canvas.create_rectangle(x, y, x + c, y + c, fill="#ffffff",
+                                                 outline="")
+                else:
+                    self.canvas.create_rectangle(x, y, x + c, y + c, fill="#d8d8d8",
+                                                 outline="")
+
+    # ------------------------------------------------------------- ações
+    def _mudar_formato(self, _evt=None):
+        self._ajustar_extensao()
+        if self.var_transp.get() and self.combo_formato.get() != "PNG":
+            self.var_transp.set(False)
+        self._atualizar_preview()
+
+    def _ajustar_extensao(self):
+        fmt = self.combo_formato.get()
+        p = self.entry_saida.get().strip()
+        base, ext = os.path.splitext(p)
+        if base and ext:
+            self.var_saida.set(f"{base}{EXT[fmt]}")
+        else:
+            self.var_saida.set(self._saida_padrao())
+
+    def _saida_padrao(self):
+        import time
+        fmt = self.combo_formato.get()
+        nome = "QR_" + time.strftime("%Y%m%d_%H%M%S") + EXT[fmt]
+        return os.path.join(PICS, nome)
+
+    def _escolher_cor(self, qual):
+        atual = self.cor_qr if qual == "qr" else self.cor_fundo
+        cor = colorchooser.askcolor(color=atual, title="Escolher cor", parent=self)
+        if cor and cor[1]:
+            if qual == "qr":
+                self.cor_qr = cor[1]
+                self.btn_cor_qr.configure(bg=cor[1],
+                                          fg="#FFFFFF" if self._lum(cor[0]) < 128 else "#000000")
+            else:
+                self.cor_fundo = cor[1]
+                self.btn_cor_fundo.configure(bg=cor[1],
+                                             fg="#FFFFFF" if self._lum(cor[0]) < 128 else "#000000")
+            self._atualizar_preview()
+
+    @staticmethod
+    def _lum(rgb):
+        return (0.299 * rgb[0] + 0.587 * rgb[1] + 0.114 * rgb[2])
+
+    def _escolher_logo(self):
+        p = filedialog.askopenfilename(
+            title="Escolher imagem do logo",
+            parent=self,
+            filetypes=[("Imagens", "*.png *.jpg *.jpeg *.bmp *.gif"), ("Todos", "*")])
+        if p:
+            self.logo_path = p
+            self.var_logo.set(p)
+            self._atualizar_preview()
+
+    def _mudar_logo(self, _evt=None):
+        self.logo_path = self.entry_logo.get().strip() or None
+        self._atualizar_preview()
+
+    def _escolher_saida(self):
+        fmt = self.combo_formato.get()
+        p = filedialog.asksaveasfilename(
+            title="Guardar QR como",
+            parent=self,
+            defaultextension=EXT[fmt],
+            initialfile=self._saida_padrao(),
+            filetypes=[(fmt, f"*{EXT[fmt]}"), ("Todas as imagens", "*.png *.jpg *.bmp *.ico")])
+        if p:
+            self.var_saida.set(p)
+
+    # ------------------------------------------------------------ geração
+    def gerar_imagem(self):
+        texto = self.entry_texto.get().strip()
+        if not texto:
+            return None
+        fmt = self.combo_formato.get() or "PNG"
+        nivel = NIVEIS.get(self.combo_nivel.get(), qrcode.constants.ERROR_CORRECT_M)
+        escala = int(self.slider_escala.get())
+        margem = int(self.slider_margem.get())
+        transparencia = self.var_transp.get() and fmt == "PNG"
+
+        qr = qrcode.QRCode(version=None, error_correction=nivel, box_size=escala, border=margem)
+        qr.add_data(texto)
+        qr.make(fit=True)
+
+        try:
+            tamanho = int(self.spin_tamanho.get())
+        except ValueError:
+            tamanho = 0
+        if tamanho > 0:
+            total = qr.modules_count + 2 * margem
+            qr.box_size = max(1, tamanho // total)
+
+        img = qr.make_image(fill_color=self.cor_qr, back_color=self.cor_fundo).convert("RGBA")
+
+        if transparencia:
+            r, g, b = Image.new("RGB", (1, 1), self.cor_fundo).getpixel((0, 0))
+            img.putdata([(0, 0, 0, 0) if px[:3] == (r, g, b) else px for px in img.getdata()])
+        elif tamanho > 0 and img.width != tamanho:
+            img = img.resize((tamanho, tamanho), Image.NEAREST)
+
+        if self.var_logo_chk.get() and self.logo_path:
+            try:
+                img = self._aplicar_logo(img)
+            except Exception as e:
+                messagebox.showwarning(APP, f"Não foi possível inserir o logo:\n{e}", parent=self)
+        return img, fmt
+
+    def _aplicar_logo(self, img):
+        logo = Image.open(self.logo_path).convert("RGBA")
+        alvo = max(48, img.width // 4)
+        ratio = min(alvo / logo.width, alvo / logo.height)
+        logo = logo.resize((max(1, int(logo.width * ratio)),
+                            max(1, int(logo.height * ratio))), Image.LANCZOS)
+        mascara = Image.new("L", logo.size, 0)
+        ImageDraw.Draw(mascara).ellipse((0, 0, logo.width - 1, logo.height - 1), fill=255)
+        disco = Image.new("RGBA", logo.size, (255, 255, 255, 255))
+        disco.paste(logo, (0, 0), mascara)
+        x = (img.width - logo.width) // 2
+        y = (img.height - logo.height) // 2
+        img.paste(disco, (x, y), mascara)
+        return img
+
+    # ------------------------------------------------------------- preview
+    def _atualizar_preview(self, *_a):
+        if not hasattr(self, "canvas"):
+            return
+        self.canvas.delete("all")
+        self._desenhar_xadrez()
+        res = self.gerar_imagem()
+        if res is None:
+            self.canvas.create_text(200, 200, text="Digite o conteúdo\npara ver o preview",
+                                    fill="#666666", font=("Sans", 12))
+            return
+        img, _fmt = res
+        maxdim = min(self.canvas.winfo_width(), self.canvas.winfo_height()) - 8
+        if maxdim < 50:
+            maxdim = 392
+        ratio = min(maxdim / img.width, maxdim / img.height)
+        thumb = img.resize((max(1, int(img.width * ratio)),
+                            max(1, int(img.height * ratio))), Image.LANCZOS)
+        self._tkimg = ImageTk.PhotoImage(thumb)
+        x = max(200, self.canvas.winfo_width() // 2)
+        y = max(200, self.canvas.winfo_height() // 2)
+        self.canvas.create_image(x, y, image=self._tkimg)
+
+    # --------------------------------------------------------------- save
+    def salvar(self):
+        res = self.gerar_imagem()
+        if res is None:
+            messagebox.showwarning(APP, "Escreve o conteúdo primeiro.", parent=self)
+            return
+        img, fmt = res
+
+        if self.var_transp.get() and fmt != "PNG":
+            messagebox.showwarning(APP, "Fundo transparente só é suportado em PNG.\n"
+                                        "O fundo ficará branco.", parent=self)
+
+        path = self.entry_saida.get().strip() or self._saida_padrao()
+        if not path.lower().endswith(EXT[fmt].lower()):
+            path += EXT[fmt]
+        try:
+            os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
+            if fmt in ("JPG", "BMP"):
+                img = img.convert("RGB")
+            elif fmt == "ICO":
+                img.save(path, sizes=[(256, 256), (128, 128), (64, 64),
+                                      (48, 48), (32, 32), (16, 16)])
+                self._registar_historico(path, fmt)
+                messagebox.showinfo(APP, f"QR salvo:\n{path}", parent=self)
+                return
+            img.save(path)
+        except Exception as e:
+            messagebox.showerror(APP, f"Erro ao salvar:\n{e}", parent=self)
+            return
+        self._registar_historico(path, fmt)
+        messagebox.showinfo(APP, f"QR salvo:\n{path}", parent=self)
+
+    def _registar_historico(self, path, fmt):
+        import time
+        texto = self.entry_texto.get().strip()
+        if len(texto) > 80:
+            texto = texto[:77] + "..."
+        linha = (f"{time.strftime('%Y-%m-%d %H:%M:%S')} | {fmt} | "
+                 f"cor {self.cor_qr}/{self.cor_fundo}"
+                 f" | transp {int(self.var_transp.get())}"
+                 f" | logo {int(self.var_logo_chk.get())}"
+                 f" | {texto!r} -> {path}\n")
+        try:
+            with open(HIST, "a", encoding="utf-8") as fh:
+                fh.write(linha)
+        except OSError:
+            pass
+
+    def _ver_historico(self):
+        if os.path.exists(HIST):
+            subprocess.Popen(["xdg-open", HIST])
+        else:
+            messagebox.showinfo(APP, "Ainda não há histórico.", parent=self)
+
+
+def main():
+    app = PortalMaster()
+    app.mainloop()
+
+
+if __name__ == "__main__":
+    main()
+PYEOF
