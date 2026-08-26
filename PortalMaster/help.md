@@ -34,30 +34,21 @@ Então criei o **PortalMaster**: um gerador totalmente grátis que funciona 100%
 ```bash
 # Python3 e dependências básicas
 sudo apt update
-sudo apt install python3 python3-pip python3-tk
-
-# Dependências Python
-pip3 install qrcode[pil] Pillow
+sudo apt install python3 python3-tk
 ```
 
 ### Linux (Arch/Manjaro)
 
 ```bash
 # Python3 e dependências básicas
-sudo pacman -S python python-pip tk
-
-# Dependências Python
-pip3 install qrcode[pil] Pillow
+sudo pacman -S python tk
 ```
 
 ### Linux (Fedora)
 
 ```bash
 # Python3 e dependências básicas
-sudo dnf install python3 python3-pip tkinter
-
-# Dependências Python
-pip3 install qrcode[pil] Pillow
+sudo dnf install python3 tkinter
 ```
 
 ## Instalação
@@ -78,6 +69,8 @@ chmod +x install.sh
 
 O script de instalação irá:
 - Verificar todas as dependências
+- Criar um ambiente virtual Python em `~/.venv`
+- Instalar as dependências Python automaticamente
 - Instalar o script em `~/.local/bin/portalmaster`
 - Criar o arquivo .desktop para o menu de aplicações
 - Configurar o ícone (se disponível)
@@ -86,21 +79,38 @@ O script de instalação irá:
 
 Se preferir instalar manualmente:
 
-1. Copie o script para o diretório de binários:
+1. Crie o ambiente virtual e instale as dependências:
+```bash
+python3 -m venv ~/.venv
+~/.venv/bin/pip install qrcode[pil] Pillow
+```
+
+2. Copie os scripts para o diretório de binários:
 ```bash
 mkdir -p ~/.local/bin
 cp portalmaster ~/.local/bin/portalmaster
-chmod 755 ~/.local/bin/portalmaster
+cp portalmaster_wrapper ~/.local/bin/portalmaster_wrapper
+chmod 755 ~/.local/bin/portalmaster ~/.local/bin/portalmaster_wrapper
 ```
 
-2. Instale o arquivo .desktop:
+3. Instale o arquivo .desktop:
 ```bash
 mkdir -p ~/.local/share/applications
-cp PortalMaster.desktop ~/.local/share/applications/
+cat > ~/.local/share/applications/PortalMaster.desktop << EOF
+[Desktop Entry]
+Type=Application
+Name=PortalMaster
+Comment=Gerador de QR Code
+Exec=$HOME/.local/bin/portalmaster_wrapper
+Icon=PortalMaster
+Terminal=false
+Categories=Graphics;Utility;
+StartupNotify=true
+EOF
 update-desktop-database ~/.local/share/applications
 ```
 
-3. (Opcional) Instale o ícone:
+4. (Opcional) Instale o ícone:
 ```bash
 mkdir -p ~/.local/share/icons/hicolor/512x512/apps
 cp PortalMaster.png ~/.local/share/icons/hicolor/512x512/apps/
@@ -135,8 +145,8 @@ chmod +x uninstall.sh
 ### Desinstalação Manual
 
 ```bash
-# Remova o script
-rm ~/.local/bin/portalmaster
+# Remova o script e o wrapper
+rm ~/.local/bin/portalmaster ~/.local/bin/portalmaster_wrapper
 
 # Remova o arquivo .desktop
 rm ~/.local/share/applications/PortalMaster.desktop
@@ -148,8 +158,8 @@ rm ~/.local/share/icons/hicolor/512x512/apps/PortalMaster.png
 update-desktop-database ~/.local/share/applications
 gtk-update-icon-cache -f ~/.local/share/icons/hicolor
 
-# (Opcional) Remova os dados
-rm -rf ~/.local/share/portalmaster
+# (Opcional) Remova os dados e o ambiente virtual
+rm -rf ~/.local/share/portalmaster ~/.venv
 ```
 
 ## Uso
@@ -167,9 +177,10 @@ ou procura **PortalMaster** no menu de aplicações.
 ## Estrutura do ficheiro
 
 - `portalmaster` — script bash que lança a GUI Tk (Python embutido)
+- `portalmaster_wrapper` — script wrapper que ativa o ambiente virtual
 - `PortalMaster.desktop` — atalho para o menu de aplicações
 - `install.sh` — script de instalação automática
-- `uninstall.sh` -- script de desinstalação
+- `uninstall.sh` — script de desinstalação
 - `help.md` — este ficheiro
 
 ## Solução de Problemas
@@ -202,9 +213,9 @@ sudo dnf install tkinter
 
 ### "Módulos Python não encontrados"
 
-Instale as dependências Python:
+O script de instalação cria automaticamente um ambiente virtual e instala as dependências. Se encontrar problemas, execute:
 ```bash
-pip3 install qrcode[pil] Pillow
+~/.venv/bin/pip install qrcode[pil] Pillow
 ```
 
 ### Ícone não aparece no menu

@@ -6,10 +6,12 @@ set -euo pipefail
 
 APP="PortalMaster"
 SCRIPT_NAME="portalmaster"
+WRAPPER_NAME="portalmaster_wrapper"
 INSTALL_DIR="$HOME/.local/bin"
 APPS_DIR="$HOME/.local/share/applications"
 ICONS_DIR="$HOME/.local/share/icons/hicolor/512x512/apps"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+VENV_DIR="$HOME/.venv"
 
 # Cores para output
 RED='\033[0;31m'
@@ -34,25 +36,39 @@ check_dependencies() {
         exit 1
     fi
     
-    if ! python3 -c "import qrcode" &> /dev/null; then
-        log_error "qrcode não encontrado. Instale: pip install qrcode[pil]"
-        exit 1
-    fi
-    
-    if ! python3 -c "from PIL import Image" &> /dev/null; then
-        log_error "Pillow não encontrado. Instale: pip install Pillow"
-        exit 1
-    fi
-    
     log_info "Dependências verificadas com sucesso!"
+}
+
+create_venv() {
+    log_info "Configurando ambiente virtual..."
+    
+    if [ ! -d "$VENV_DIR" ]; then
+        log_info "Criando ambiente virtual..."
+        python3 -m venv "$VENV_DIR"
+    fi
+    
+    log_info "Instalando dependências Python..."
+    "$VENV_DIR/bin/pip" install --upgrade pip
+    "$VENV_DIR/bin/pip" install qrcode[pil] Pillow
+    
+    log_info "Ambiente virtual configurado com sucesso!"
 }
 
 install_script() {
     log_info "Instalando script..."
     
     mkdir -p "$INSTALL_DIR"
+    
+    # Copia o script principal
     cp "$SCRIPT_DIR/$SCRIPT_NAME" "$INSTALL_DIR/$SCRIPT_NAME"
     chmod 755 "$INSTALL_DIR/$SCRIPT_NAME"
+    
+    # Copia o wrapper
+    cp "$SCRIPT_DIR/$WRAPPER_NAME" "$INSTALL_DIR/$WRAPPER_NAME"
+    chmod 755 "$INSTALL_DIR/$WRAPPER_NAME"
+    
+    # Cria um symlink para o wrapper
+    ln -sf "$INSTALL_DIR/$WRAPPER_NAME" "$INSTALL_DIR/$SCRIPT_NAME"
     
     log_info "Script instalado em: $INSTALL_DIR/$SCRIPT_NAME"
 }
@@ -68,7 +84,7 @@ install_desktop_file() {
 Type=Application
 Name=$APP
 Comment=Gerador de QR Code
-Exec=$INSTALL_DIR/$SCRIPT_NAME
+Exec=$INSTALL_DIR/$WRAPPER_NAME
 Icon=$APP
 Terminal=false
 Categories=Graphics;Utility;
@@ -139,6 +155,12 @@ uninstall() {
         log_info "Script removido: $INSTALL_DIR/$SCRIPT_NAME"
     fi
     
+    # Remove o wrapper
+    if [ -f "$INSTALL_DIR/$WRAPPER_NAME" ]; then
+        rm "$INSTALL_DIR/$WRAPPER_NAME"
+        log_info "Wrapper removido: $INSTALL_DIR/$WRAPPER_NAME"
+    fi
+    
     # Remove o arquivo .desktop
     if [ -f "$APPS_DIR/$APP.desktop" ]; then
         rm "$APPS_DIR/$APP.desktop"
@@ -164,6 +186,7 @@ uninstall() {
     log_info "$APP desinstalado com sucesso!"
     log_warn "Os dados em ~/.local/share/portalmaster não foram removidos."
     log_warn "Para remover completamente, delete: rm -rf ~/.local/share/portalmaster"
+    log_warn "Para remover o ambiente virtual, delete: rm -rf ~/.venv"
 }
 
 main() {
@@ -182,6 +205,7 @@ main() {
             ;;
         "")
             check_dependencies
+            create_venv
             create_directories
             install_script
             install_desktop_file

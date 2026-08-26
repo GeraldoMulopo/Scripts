@@ -6,9 +6,11 @@ set -euo pipefail
 
 APP="PortalMaster"
 SCRIPT_NAME="portalmaster"
+WRAPPER_NAME="portalmaster_wrapper"
 INSTALL_DIR="$HOME/.local/bin"
 APPS_DIR="$HOME/.local/share/applications"
 ICONS_DIR="$HOME/.local/share/icons/hicolor/512x512/apps"
+VENV_DIR="$HOME/.venv"
 
 # Cores para output
 RED='\033[0;31m'
@@ -31,6 +33,14 @@ main() {
         log_info "Script removido: $INSTALL_DIR/$SCRIPT_NAME"
     else
         log_warn "Script não encontrado: $INSTALL_DIR/$SCRIPT_NAME"
+    fi
+    
+    # Remove o wrapper
+    if [ -f "$INSTALL_DIR/$WRAPPER_NAME" ]; then
+        rm "$INSTALL_DIR/$WRAPPER_NAME"
+        log_info "Wrapper removido: $INSTALL_DIR/$WRAPPER_NAME"
+    else
+        log_warn "Wrapper não encontrado: $INSTALL_DIR/$WRAPPER_NAME"
     fi
     
     # Remove o arquivo .desktop
@@ -65,6 +75,8 @@ main() {
     log_warn "Os dados em ~/.local/share/portalmaster não foram removidos."
     log_warn "Para remover completamente, execute:"
     log_warn "  rm -rf ~/.local/share/portalmaster"
+    log_warn "Para remover o ambiente virtual, execute:"
+    log_warn "  rm -rf ~/.venv"
     echo ""
 }
 
