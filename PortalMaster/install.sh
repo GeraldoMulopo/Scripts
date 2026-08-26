@@ -63,12 +63,29 @@ install_script() {
     cp "$SCRIPT_DIR/$SCRIPT_NAME" "$INSTALL_DIR/$SCRIPT_NAME"
     chmod 755 "$INSTALL_DIR/$SCRIPT_NAME"
     
-    # Copia o wrapper
-    cp "$SCRIPT_DIR/$WRAPPER_NAME" "$INSTALL_DIR/$WRAPPER_NAME"
-    chmod 755 "$INSTALL_DIR/$WRAPPER_NAME"
+    # Cria o wrapper com o caminho correto para o script instalado
+    cat > "$INSTALL_DIR/$WRAPPER_NAME" << EOF
+#!/usr/bin/env bash
+# PortalMaster — Script wrapper para ambiente virtual
+# Ativa o ambiente virtual e executa o script principal
+
+SCRIPT_DIR="\$(cd "\$(dirname "\${BASH_SOURCE[0]}")" && pwd)"
+VENV_DIR="\$HOME/.venv"
+
+# Verifica se o ambiente virtual existe
+if [ ! -d "\$VENV_DIR" ]; then
+    echo "Criando ambiente virtual..."
+    python3 -m venv "\$VENV_DIR"
+    echo "Instalando dependências..."
+    "\$VENV_DIR/bin/pip" install qrcode[pil] Pillow
+fi
+
+# Ativa o ambiente virtual e executa o script
+source "\$VENV_DIR/bin/activate"
+exec "\$SCRIPT_DIR/$SCRIPT_NAME" "\$@"
+EOF
     
-    # Cria um symlink para o wrapper
-    ln -sf "$INSTALL_DIR/$WRAPPER_NAME" "$INSTALL_DIR/$SCRIPT_NAME"
+    chmod 755 "$INSTALL_DIR/$WRAPPER_NAME"
     
     log_info "Script instalado em: $INSTALL_DIR/$SCRIPT_NAME"
 }
