@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Recordinn
+Comment=Gravador de Áudio leve
+Exec=/home/geraldo/.local/bin/recordinn
+Icon=recordinn
+Terminal=false
+Categories=Audio;Utility;
+StartupNotify=true

@@ -1,0 +1,400 @@
+#!/usr/bin/env bash
+# Recordinn — Gravador de Áudio leve
+# GUI em Python/Tk, lançada por este script bash.
+exec python3 - "$@" <<'PYEOF'
+#!/usr/bin/env python3
+"""Recordinn — Gravador de Áudio (GUI Tk)."""
+
+import os, sys, time, wave, threading, subprocess
+import tkinter as tk
+from tkinter import ttk, filedialog, messagebox
+import numpy as np
+
+try:
+    import sounddevice as sd
+except ImportError:
+    print("Erro: sounddevice não instalado.\nInstala com: pip3 install sounddevice")
+    sys.exit(1)
+
+APP = "Recordinn"
+ACCENT = "#22C55E"
+ACCENT_DARK = "#16A34A"
+BG = "#0A0A0A"
+BG_CARD = "#141414"
+BG_INPUT = "#1E1E1E"
+FG = "#FAFAFA"
+FG_DIM = "#71717A"
+FG_ACCENT = "#22C55E"
+BORDER = "#27272A"
+BASE = os.path.expanduser("~/.local/share/recordinn")
+GRAVS = os.path.join(BASE, "gravacoes")
+os.makedirs(GRAVS, exist_ok=True)
+
+
+class ToolTip:
+    def __init__(self, widget, texto):
+        self.widget = widget
+        self.texto = texto
+        self._janela = None
+        widget.bind("<Enter>", self._mostrar)
+        widget.bind("<Leave>", self._esconder)
+
+    def _mostrar(self, _e=None):
+        self._esconder()
+        x = self.widget.winfo_rootx() + 16
+        y = self.widget.winfo_rooty() + self.widget.winfo_height() + 6
+        self._janela = tk.Toplevel(self.widget)
+        self._janela.wm_overrideredirect(True)
+        self._janela.wm_geometry(f"+{x}+{y}")
+        lbl = tk.Label(self._janela, text=self.texto, justify="left",
+                       bg="#18181B", fg="#FAFAFA", padx=10, pady=6,
+                       font=("Sans", 9))
+        lbl.pack()
+
+    def _esconder(self, _e=None):
+        if self._janela is not None:
+            self._janela.destroy()
+            self._janela = None
+
+
+class Recordinn(tk.Tk):
+    def __init__(self):
+        super().__init__()
+        self.title(f"{APP} — Gravador de Áudio")
+        self.configure(bg=BG)
+        self.minsize(800, 560)
+        self.gravando = False
+        self.tocando = False
+        self.dados_audio = None
+        self.sample_rate = 44100
+        self.canais = 1
+        self.frames = []
+        self.stream = None
+        self._tkimg = None
+        self.var_status = tk.StringVar(value="Pronto")
+        self.var_tempo = tk.StringVar(value="00:00.0")
+        self.var_vol = tk.DoubleVar(value=1.0)
+        self.var_formato = tk.StringVar(value="WAV")
+        self._estilos()
+        self._construir_interface()
+        self._centrar(820, 580)
+        self._ligar_atalhos()
+        self.after(200, self._listar_dispositivos)
+
+    def _estilos(self):
+        s = ttk.Style(self)
+        s.theme_use("clam")
+        s.configure(".", font=("Ubuntu", 10), background=BG, foreground=FG)
+        s.configure("TFrame", background=BG)
+        s.configure("TLabel", background=BG, foreground=FG)
+        s.configure("TButton", padding=(14, 8), background=BG_INPUT, foreground=FG, borderwidth=1, relief="flat")
+        s.map("TButton", background=[("active", BORDER), ("pressed", "#3F3F46")])
+        s.configure("Rec.TButton", background=ACCENT, foreground="#000000", font=("Ubuntu", 10, "bold"), padding=(20, 10))
+        s.map("Rec.TButton", background=[("active", ACCENT_DARK), ("pressed", ACCENT_DARK)])
+        s.configure("Stop.TButton", background="#EF4444", foreground="#FFFFFF", font=("Ubuntu", 10, "bold"), padding=(20, 10))
+        s.map("Stop.TButton", background=[("active", "#DC2626"), ("pressed", "#DC2626")])
+        s.configure("Play.TButton", background="#3B82F6", foreground="#FFFFFF", font=("Ubuntu", 10, "bold"), padding=(20, 10))
+        s.map("Play.TButton", background=[("active", "#2563EB"), ("pressed", "#2563EB")])
+        s.configure("TLabelframe", background=BG, bordercolor=BORDER, lightcolor=BORDER, darkcolor=BORDER)
+        s.configure("TLabelframe.Label", background=BG, foreground=FG_DIM, font=("Ubuntu", 9, "bold"))
+        s.configure("Horizontal.TScale", troughcolor=BG_INPUT)
+        s.configure("Titulo.TLabel", font=("Ubuntu", 18, "bold"), foreground=FG)
+        s.configure("Sub.TLabel", font=("Ubuntu", 10), foreground=FG_DIM)
+        s.configure("Tempo.TLabel", font=("Ubuntu", 28, "bold"), foreground=FG_ACCENT)
+        s.configure("Pista.TLabel", font=("Ubuntu", 9), foreground=FG_DIM)
+        s.configure("Valor.TLabel", font=("Ubuntu", 9, "bold"), foreground=FG)
+        s.configure("Status.TLabel", font=("Ubuntu", 9), foreground=FG_DIM)
+
+    def _centrar(self, w, h):
+        x = max(0, (self.winfo_screenwidth() - w) // 2)
+        y = max(0, (self.winfo_screenheight() - h) // 2)
+        self.geometry(f"{w}x{h}+{x}+{y}")
+
+    def _ligar_atalhos(self):
+        self.bind_all("<Control-r>", lambda _e: self._toggle_gravar())
+        self.bind_all("<Control-p>", lambda _e: self._toggle_tocar())
+        self.bind_all("<Control-s>", lambda _e: self._salvar())
+        self.bind_all("<Escape>", lambda _e: self._parar())
+
+    def _construir_interface(self):
+        raiz = ttk.Frame(self, padding=(16, 12, 16, 8))
+        raiz.pack(fill="both", expand=True)
+        ttk.Label(raiz, text=APP, style="Titulo.TLabel").pack(anchor="w")
+        ttk.Label(raiz, text="Gravador de áudio leve — 100% offline", style="Sub.TLabel").pack(anchor="w", pady=(0, 12))
+        corpo = ttk.Frame(raiz)
+        corpo.pack(fill="both", expand=True)
+        esq = ttk.Frame(corpo)
+        esq.pack(side="left", fill="both", expand=True)
+        dirf = ttk.Frame(corpo, background=BG_CARD, padding=10)
+        dirf.pack(side="right", fill="both", expand=True, padx=(14, 0))
+        f = ttk.Frame(esq)
+        f.pack(fill="x")
+        self.btn_gravar = ttk.Button(f, text="⏺  Gravar", style="Rec.TButton", command=self._toggle_gravar)
+        self.btn_gravar.pack(side="left")
+        ToolTip(self.btn_gravar, "Iniciar/parar gravação (Ctrl+R)")
+        self.btn_tocar = ttk.Button(f, text="▶  Tocar", style="Play.TButton", command=self._toggle_tocar)
+        self.btn_tocar.pack(side="left", padx=(8, 0))
+        ToolTip(self.btn_tocar, "Reproduzir/pausar (Ctrl+P)")
+        self.btn_parar = ttk.Button(f, text="⏹  Parar", style="Stop.TButton", command=self._parar)
+        self.btn_parar.pack(side="left", padx=(8, 0))
+        ToolTip(self.btn_parar, "Parar tudo (Esc)")
+        f = ttk.Frame(esq)
+        f.pack(fill="x", pady=(14, 0))
+        ttk.Label(f, text="TEMPO", style="Pista.TLabel").pack(anchor="w")
+        ttk.Label(f, textvariable=self.var_tempo, style="Tempo.TLabel").pack(anchor="w")
+        f = ttk.LabelFrame(esq, text="DISPOSITIVO", padding=10)
+        f.pack(fill="x", pady=(10, 0))
+        self.combo_dev = ttk.Combobox(f, state="readonly", width=40)
+        self.combo_dev.pack(fill="x")
+        f = ttk.LabelFrame(esq, text="VOLUME", padding=10)
+        f.pack(fill="x", pady=(10, 0))
+        linha = ttk.Frame(f)
+        linha.pack(fill="x")
+        ttk.Label(linha, text="🔊", width=3).pack(side="left")
+        self.slider_vol = ttk.Scale(linha, from_=0.0, to=2.0, variable=self.var_vol, command=self._mudar_vol)
+        self.slider_vol.pack(side="left", fill="x", expand=True, padx=(4, 8))
+        self.lbl_vol = ttk.Label(linha, text="100%", style="Valor.TLabel", width=5, anchor="e")
+        self.lbl_vol.pack(side="left")
+        f = ttk.LabelFrame(esq, text="OPÇÕES", padding=10)
+        f.pack(fill="x", pady=(10, 0))
+        linha = ttk.Frame(f)
+        linha.pack(fill="x")
+        ttk.Label(linha, text="Sample Rate:").pack(side="left")
+        self.combo_sr = ttk.Combobox(linha, values=["22050", "44100", "48000"], state="readonly", width=8)
+        self.combo_sr.set("44100")
+        self.combo_sr.pack(side="left", padx=(6, 18))
+        ttk.Label(linha, text="Canais:").pack(side="left")
+        self.combo_ch = ttk.Combobox(linha, values=["1 (Mono)", "2 (Stereo)"], state="readonly", width=10)
+        self.combo_ch.set("1 (Mono)")
+        self.combo_ch.pack(side="left", padx=(6, 0))
+        linha = ttk.Frame(f)
+        linha.pack(fill="x", pady=(8, 0))
+        ttk.Label(linha, text="Formato:").pack(side="left")
+        fmts = ["WAV"]
+        try:
+            subprocess.run(["ffmpeg", "-version"], capture_output=True, timeout=2)
+            fmts.append("MP3")
+        except Exception:
+            pass
+        self.combo_fmt = ttk.Combobox(linha, values=fmts, state="readonly", width=6)
+        self.combo_fmt.set("WAV")
+        self.combo_fmt.pack(side="left", padx=(6, 0))
+        f = ttk.LabelFrame(esq, text="GUARDAR EM", padding=10)
+        f.pack(fill="x", pady=(10, 0))
+        self.var_saida = tk.StringVar(value=self._saida_padrao())
+        self.entry_saida = ttk.Entry(f, textvariable=self.var_saida)
+        self.entry_saida.pack(side="left", fill="x", expand=True)
+        ttk.Button(f, text="Escolher…", command=self._escolher_saida).pack(side="left", padx=(8, 0))
+        b = ttk.Frame(esq)
+        b.pack(fill="x", pady=(14, 0))
+        ttk.Button(b, text="Salvar", command=self._salvar).pack(side="right")
+        ttk.Button(b, text="Novo", command=self._novo).pack(side="right", padx=(8, 0))
+        self.canvas = tk.Canvas(dirf, bg=BG_CARD, highlightthickness=0, bd=0)
+        self.canvas.pack(fill="both", expand=True)
+        self.canvas.bind("<Configure>", self._desenhar_waveform)
+        rodape = ttk.Frame(raiz)
+        rodape.pack(fill="x", pady=(10, 0))
+        ttk.Label(rodape, text="Ctrl+R gravar  •   Ctrl+P tocar  •   Ctrl+S salvar  •   Esc parar", style="Pista.TLabel").pack(side="left")
+        ttk.Label(rodape, textvariable=self.var_status, style="Status.TLabel", anchor="e").pack(side="right")
+
+    def _listar_dispositivos(self):
+        try:
+            devs = sd.query_devices()
+            entrada = [d["name"] for d in devs if d["max_input_channels"] > 0]
+            self.combo_dev["values"] = entrada
+            if entrada:
+                self.combo_dev.current(0)
+        except Exception as e:
+            self.var_status.set(f"Erro: {e}")
+
+    def _mudar_vol(self, val):
+        self.lbl_vol.configure(text=f"{int(float(val) * 100)}%")
+
+    def _saida_padrao(self):
+        ext = ".mp3" if self.var_formato.get() == "MP3" else ".wav"
+        return os.path.join(GRAVS, "gravacao_" + time.strftime("%Y%m%d_%H%M%S") + ext)
+
+    def _escolher_saida(self):
+        fmt = self.combo_fmt.get()
+        ext = ".mp3" if fmt == "MP3" else ".wav"
+        p = filedialog.asksaveasfilename(title="Guardar gravação como", parent=self, defaultextension=ext, initialfile=self._saida_padrao(), filetypes=[(fmt, f"*{ext}"), ("Todos", "*")])
+        if p:
+            self.var_saida.set(p)
+
+    def _toggle_gravar(self):
+        if self.gravando:
+            self._parar_gravacao()
+        else:
+            self._iniciar_gravacao()
+
+    def _iniciar_gravacao(self):
+        self.frames = []
+        self.gravando = True
+        self.btn_gravar.configure(text="⏹  Parar")
+        self.var_status.set("Gravando…")
+        self.var_tempo.set("00:00.0")
+        ch = 2 if "Stereo" in self.combo_ch.get() else 1
+        self.canais = ch
+        sr = int(self.combo_sr.get())
+        try:
+            self.stream = sd.InputStream(samplerate=sr, channels=ch, dtype="float32", callback=self._callback_gravar)
+            self.stream.start()
+            self._inicio = time.time()
+            self._atualizar_timer()
+        except Exception as e:
+            self.gravando = False
+            self.btn_gravar.configure(text="⏺  Gravar")
+            self.var_status.set(f"Erro: {e}")
+
+    def _callback_gravar(self, indata, frames, time_info, status):
+        if self.gravando:
+            vol = self.var_vol.get()
+            self.frames.append(indata.copy() * vol)
+
+    def _atualizar_timer(self):
+        if self.gravando:
+            elapsed = time.time() - self._inicio
+            mins = int(elapsed // 60)
+            secs = elapsed % 60
+            self.var_tempo.set(f"{mins:02d}:{secs:05.1f}")
+            self.after(100, self._atualizar_timer)
+
+    def _parar_gravacao(self):
+        self.gravando = False
+        if self.stream:
+            self.stream.stop()
+            self.stream.close()
+            self.stream = None
+        self.btn_gravar.configure(text="⏺  Gravar")
+        if self.frames:
+            self.dados_audio = np.concatenate(self.frames, axis=0)
+            self.var_status.set(f"Gravado: {len(self.dados_audio)/self.sample_rate:.1f}s")
+            self._desenhar_waveform()
+        else:
+            self.var_status.set("Gravação vazia")
+
+    def _toggle_tocar(self):
+        if self.tocando:
+            self._parar_tocar()
+        elif self.dados_audio is not None:
+            self._iniciar_tocar()
+        else:
+            messagebox.showwarning(APP, "Nenhuma gravação para tocar.")
+
+    def _iniciar_tocar(self):
+        self.tocando = True
+        self.btn_tocar.configure(text="⏸  Pausar")
+        self.var_status.set("Reproduzindo…")
+        threading.Thread(target=self._tocar_thread, daemon=True).start()
+
+    def _tocar_thread(self):
+        try:
+            sd.play(self.dados_audio, self.sample_rate)
+            sd.wait()
+        except Exception:
+            pass
+        finally:
+            self.tocando = False
+            self.after(0, lambda: self.btn_tocar.configure(text="▶  Tocar"))
+            self.after(0, lambda: self.var_status.set("Pronto"))
+
+    def _parar_tocar(self):
+        sd.stop()
+        self.tocando = False
+        self.btn_tocar.configure(text="▶  Tocar")
+        self.var_status.set("Pronto")
+
+    def _parar(self):
+        if self.gravando:
+            self._parar_gravacao()
+        if self.tocando:
+            self._parar_tocar()
+
+    def _desenhar_waveform(self, _evt=None):
+        self.canvas.delete("all")
+        cw = max(50, self.canvas.winfo_width() - 20)
+        ch = max(50, self.canvas.winfo_height() - 20)
+        if self.dados_audio is None:
+            self.canvas.create_text(cw // 2, ch // 2, text="Grave áudio para ver a forma de onda", fill=FG_DIM, font=("Sans", 11))
+            return
+        dados = self.dados_audio.flatten()
+        step = max(1, len(dados) // cw)
+        amostras = [dados[i:i + step].mean() for i in range(0, len(dados), step)]
+        if not amostras:
+            return
+        max_val = max(abs(min(amostras)), abs(max(amostras)), 0.01)
+        mid = ch // 2
+        pontos = []
+        for i, v in enumerate(amostras):
+            x = (i / len(amostras)) * cw
+            y = mid - (v / max_val) * (mid - 4)
+            pontos.append((x, y))
+        if len(pontos) > 1:
+            coords = []
+            for x, y in pontos:
+                coords.extend([x, y])
+            self.canvas.create_line(coords, fill=ACCENT, width=1.5, smooth=True)
+        self.canvas.create_line(0, mid, cw, mid, fill=BORDER, width=1)
+
+    def _salvar(self):
+        if self.dados_audio is None:
+            messagebox.showwarning(APP, "Nenhuma gravação para salvar.")
+            return
+        path = self.var_saida.get().strip() or self._saida_padrao()
+        fmt = self.combo_fmt.get()
+        ext = ".mp3" if fmt == "MP3" else ".wav"
+        if not path.lower().endswith(ext):
+            path = os.path.splitext(path)[0] + ext
+        if os.path.exists(path):
+            if not messagebox.askyesno(APP, f"O ficheiro já existe:\n{path}\n\nSubstituir?", icon="warning"):
+                return
+        try:
+            os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
+            if fmt == "MP3":
+                self._salvar_mp3(path)
+            else:
+                self._salvar_wav(path)
+            self.var_status.set(f"Salvo: {os.path.basename(path)}")
+            if messagebox.askyesno(APP, f"Gravação salva:\n{path}\n\nAbrir a pasta?"):
+                subprocess.Popen(["xdg-open", os.path.dirname(path)])
+        except Exception as e:
+            messagebox.showerror(APP, f"Erro ao salvar:\n{e}")
+
+    def _salvar_wav(self, path):
+        dados = (self.dados_audio * 32767).astype(np.int16)
+        with wave.open(path, "wb") as wf:
+            wf.setnchannels(self.canais)
+            wf.setsampwidth(2)
+            wf.setframerate(self.sample_rate)
+            wf.writeframes(dados.tobytes())
+
+    def _salvar_mp3(self, path):
+        tmp_wav = path + ".tmp.wav"
+        self._salvar_wav(tmp_wav)
+        try:
+            subprocess.run(["ffmpeg", "-y", "-i", tmp_wav, "-codec:a", "libmp3lame", "-b:a", "192k", path], capture_output=True, check=True)
+        finally:
+            if os.path.exists(tmp_wav):
+                os.remove(tmp_wav)
+
+    def _novo(self):
+        if self.gravando:
+            self._parar_gravacao()
+        if self.tocando:
+            self._parar_tocar()
+        self.dados_audio = None
+        self.frames = []
+        self.var_tempo.set("00:00.0")
+        self.var_saida.set(self._saida_padrao())
+        self.var_status.set("Pronto")
+        self._desenhar_waveform()
+
+
+def main():
+    app = Recordinn()
+    app.mainloop()
+
+
+if __name__ == "__main__":
+    main()
+PYEOF
