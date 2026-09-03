@@ -1,22 +1,21 @@
 # Recordinn
 
-Gravador de áudio leve, gratuito e 100% offline.
+Gravador de audio leve, gratuito e 100% offline.
 
 ## Funcionalidades
 
-- Gravar áudio do microfone
-- Reproduzir gravações
-- Visualizar forma de onda (waveform)
-- Controle de volume de entrada
-- Seleção de dispositivo de áudio
-- Sample rate ajustável (22050 / 44100 / 48000 Hz)
-- Mono ou Stereo
+- Gravar audio do microfone
+- Reproduzir audios
+- Waveform ao vivo (scroll em tempo real)
+- Historico de gravacoes em ~/Musica
+- Aba Definicoes: dispositivo, sample rate, canais, formato, guardar em
 - Exportar WAV (nativo) ou MP3 (se ffmpeg instalado)
-- Atalhos: Ctrl+R gravar • Ctrl+P tocar • Ctrl+S salvar • Esc parar
+- Atalhos: Ctrl+R gravar, Ctrl+P tocar, Ctrl+S salvar, Esc parar
 
-## Dependências
+## Dependencias
 
 ```bash
+sudo apt install -y libportaudio2
 pip3 install sounddevice numpy
 ```
 
@@ -25,7 +24,7 @@ Para MP3 (opcional):
 sudo apt install ffmpeg
 ```
 
-## Instalação
+## Instalacao
 
 ```bash
 chmod +x recordinn
