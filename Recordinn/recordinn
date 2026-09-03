@@ -77,7 +77,7 @@ class Recordinn(tk.Tk):
         except Exception:
             pass
         self.configure(bg=BG)
-        self.minsize(900, 620)
+        self.minsize(700, 480)
 
         self.gravando = False
         self.tocando = False
@@ -86,14 +86,10 @@ class Recordinn(tk.Tk):
         self.canais = 1
         self.frames = []
         self.stream = None
-        self._scroll_offset = 0
 
         self.var_status = tk.StringVar(value="Pronto")
         self.var_tempo = tk.StringVar(value="00:00.0")
-        self.var_formato = tk.StringVar(value="WAV")
         self.var_saida = tk.StringVar()
-        self.var_sr = tk.StringVar(value="44100")
-        self.var_ch = tk.StringVar(value="1 (Mono)")
 
         self._estilos()
         self._construir_interface()
@@ -143,7 +139,7 @@ class Recordinn(tk.Tk):
         s.configure("Status.TLabel", font=("Ubuntu", 9), foreground=FG_DIM)
         s.configure("Treeview", background=BG_INPUT, foreground=FG,
                      fieldbackground=BG_INPUT, borderwidth=0,
-                     font=("Ubuntu", 9))
+                     font=("Ubuntu", 9), rowheight=24)
         s.configure("Treeview.Heading", background=BORDER, foreground=FG,
                      font=("Ubuntu", 9, "bold"), borderwidth=0)
         s.map("Treeview", background=[("selected", ACCENT_DARK)],
@@ -161,19 +157,24 @@ class Recordinn(tk.Tk):
         self.bind_all("<Escape>", lambda _e: self._parar())
 
     def _construir_interface(self):
+        # Raiz principal com grid responsivo
+        self.columnconfigure(0, weight=1)
+        self.rowconfigure(0, weight=1)
+
         raiz = ttk.Frame(self, padding=(16, 12, 16, 8))
-        raiz.pack(fill="both", expand=True)
+        raiz.grid(row=0, column=0, sticky="nsew")
+        raiz.columnconfigure(0, weight=1)
+        raiz.rowconfigure(2, weight=1)
 
-        ttk.Label(raiz, text=APP, style="Titulo.TLabel").pack(anchor="w")
+        # Cabecalho
+        ttk.Label(raiz, text=APP, style="Titulo.TLabel").grid(
+            row=0, column=0, sticky="w")
         ttk.Label(raiz, text="Gravador de audio leve - 100% offline",
-                  style="Sub.TLabel").pack(anchor="w", pady=(0, 10))
+                  style="Sub.TLabel").grid(row=1, column=0, sticky="w", pady=(0, 10))
 
-        corpo = ttk.Frame(raiz)
-        corpo.pack(fill="both", expand=True)
-
-        # --- Aba Principal / Definicoes
-        self.notebook = ttk.Notebook(corpo)
-        self.notebook.pack(fill="both", expand=True)
+        # Notebook
+        self.notebook = ttk.Notebook(raiz)
+        self.notebook.grid(row=2, column=0, sticky="nsew")
 
         aba_gravar = ttk.Frame(self.notebook)
         aba_definir = ttk.Frame(self.notebook)
@@ -181,51 +182,70 @@ class Recordinn(tk.Tk):
         self.notebook.add(aba_definir, text="  Definicoes  ")
 
         # ============ ABA GRAVAR ============
-        top = ttk.Frame(aba_gravar)
-        top.pack(fill="both", expand=True)
+        aba_gravar.columnconfigure(0, weight=1)
+        aba_gravar.rowconfigure(3, weight=1)
 
-        # Timer centralizado
-        f_timer = ttk.Frame(top)
-        f_timer.pack(fill="x", pady=(0, 8))
-        ttk.Label(f_timer, text="TEMPO", style="Pista.TLabel").pack(anchor="w")
-        ttk.Label(f_timer, textvariable=self.var_tempo, style="Tempo.TLabel").pack(
-            anchor="w")
+        # Timer
+        f_timer = ttk.Frame(aba_gravar)
+        f_timer.grid(row=0, column=0, sticky="ew", pady=(0, 6))
+        f_timer.columnconfigure(0, weight=1)
+        ttk.Label(f_timer, text="TEMPO", style="Pista.TLabel").grid(
+            row=0, column=0, sticky="w")
+        ttk.Label(f_timer, textvariable=self.var_tempo, style="Tempo.TLabel").grid(
+            row=1, column=0, sticky="w")
 
         # Historico
-        hist_frame = ttk.Frame(top)
-        hist_frame.pack(fill="x", pady=(4, 0))
-        ttk.Label(hist_frame, text="HISTORICO", style="Pista.TLabel").pack(anchor="w")
+        hist_frame = ttk.Frame(aba_gravar)
+        hist_frame.grid(row=1, column=0, sticky="ew", pady=(4, 0))
+        hist_frame.columnconfigure(0, weight=1)
+        ttk.Label(hist_frame, text="HISTORICO", style="Pista.TLabel").grid(
+            row=0, column=0, sticky="w")
 
-        self.tree = ttk.Treeview(hist_frame, columns=("nome", "data", "tam"),
+        tree_frame = ttk.Frame(hist_frame)
+        tree_frame.grid(row=1, column=0, sticky="ew")
+        tree_frame.columnconfigure(0, weight=1)
+        tree_frame.rowconfigure(0, weight=1)
+
+        self.tree = ttk.Treeview(tree_frame, columns=("nome", "data", "tam"),
                                   show="headings", height=4)
         self.tree.heading("nome", text="Ficheiro")
         self.tree.heading("data", text="Data")
         self.tree.heading("tam", text="Tamanho")
-        self.tree.column("nome", width=220)
-        self.tree.column("data", width=140)
-        self.tree.column("tam", width=80)
-        self.tree.pack(fill="x")
+        self.tree.column("nome", width=220, minwidth=120)
+        self.tree.column("data", width=140, minwidth=100)
+        self.tree.column("tam", width=80, minwidth=60)
+
+        tree_scroll = ttk.Scrollbar(tree_frame, orient="vertical",
+                                     command=self.tree.yview)
+        self.tree.configure(yscrollcommand=tree_scroll.set)
+
+        self.tree.grid(row=0, column=0, sticky="nsew")
+        tree_scroll.grid(row=0, column=1, sticky="ns")
         self.tree.bind("<Double-1>", self._tocar_historico)
 
-        # Waveform grande
-        wf_frame = tk.Frame(top, bg=BG_CARD, padx=2, pady=2)
-        wf_frame.pack(fill="both", expand=True, pady=(8, 0))
+        # Waveform
+        wf_frame = tk.Frame(aba_gravar, bg=BG_CARD)
+        wf_frame.grid(row=2, column=0, sticky="nsew", pady=(8, 0))
+        wf_frame.columnconfigure(0, weight=1)
+        wf_frame.rowconfigure(0, weight=1)
+
         self.canvas = tk.Canvas(wf_frame, bg=BG_CARD, highlightthickness=0, bd=0)
-        self.canvas.pack(fill="both", expand=True)
+        self.canvas.grid(row=0, column=0, sticky="nsew")
         self.canvas.bind("<Configure>", self._desenhar_waveform)
 
         # Botoes em baixo
-        b_frame = ttk.Frame(top)
-        b_frame.pack(fill="x", pady=(10, 0))
+        b_frame = ttk.Frame(aba_gravar)
+        b_frame.grid(row=3, column=0, sticky="ew", pady=(10, 0))
+        b_frame.columnconfigure(1, weight=1)
 
         self.btn_gravar = ttk.Button(b_frame, text="Gravar", style="Rec.TButton",
                                       command=self._toggle_gravar)
-        self.btn_gravar.pack(side="left")
+        self.btn_gravar.grid(row=0, column=0, sticky="w")
         ToolTip(self.btn_gravar, "Iniciar/parar gravacao (Ctrl+R)")
 
         self.btn_tocar = ttk.Button(b_frame, text="Tocar", style="Play.TButton",
                                      command=self._toggle_tocar)
-        self.btn_tocar.pack(side="left", padx=(10, 0))
+        self.btn_tocar.grid(row=0, column=2, sticky="w", padx=(10, 0))
         ToolTip(self.btn_tocar, "Reproduzir ultimo audio (Ctrl+P)")
 
         self.btn_salvar = ttk.Button(b_frame, text="Salvar", style="Salvar.TButton",
@@ -234,56 +254,64 @@ class Recordinn(tk.Tk):
 
         self.lbl_status = ttk.Label(b_frame, textvariable=self.var_status,
                                      style="Status.TLabel", anchor="e")
-        self.lbl_status.pack(side="right")
+        self.lbl_status.grid(row=0, column=3, sticky="e")
 
         # ============ ABA DEFINICOES ============
         df = ttk.Frame(aba_definir, padding=20)
-        df.pack(fill="both", expand=True)
+        df.grid(row=0, column=0, sticky="nsew")
+        aba_definir.columnconfigure(0, weight=1)
+        aba_definir.rowconfigure(0, weight=1)
+        df.columnconfigure(0, weight=1)
 
         # Dispositivo
         f = ttk.LabelFrame(df, text="DISPOSITIVO", padding=10)
-        f.pack(fill="x", pady=(0, 10))
-        self.combo_dev = ttk.Combobox(f, state="readonly", width=50)
-        self.combo_dev.pack(fill="x")
+        f.grid(row=0, column=0, sticky="ew", pady=(0, 10))
+        f.columnconfigure(0, weight=1)
+        self.combo_dev = ttk.Combobox(f, state="readonly")
+        self.combo_dev.grid(row=0, column=0, sticky="ew")
 
         # Sample Rate
         f = ttk.LabelFrame(df, text="SAMPLE RATE", padding=10)
-        f.pack(fill="x", pady=(0, 10))
+        f.grid(row=1, column=0, sticky="ew", pady=(0, 10))
+        f.columnconfigure(0, weight=1)
         self.combo_sr = ttk.Combobox(f, values=["22050", "44100", "48000"],
-                                      state="readonly", width=10)
+                                      state="readonly", width=12)
         self.combo_sr.set("44100")
-        self.combo_sr.pack(anchor="w")
+        self.combo_sr.grid(row=0, column=0, sticky="w")
         self.combo_sr.bind("<<ComboboxSelected>>", self._mudar_sample_rate)
 
         # Canais
         f = ttk.LabelFrame(df, text="CANAIS", padding=10)
-        f.pack(fill="x", pady=(0, 10))
+        f.grid(row=2, column=0, sticky="ew", pady=(0, 10))
+        f.columnconfigure(0, weight=1)
         self.combo_ch = ttk.Combobox(f, values=["1 (Mono)", "2 (Stereo)"],
-                                      state="readonly", width=12)
+                                      state="readonly", width=14)
         self.combo_ch.set("1 (Mono)")
-        self.combo_ch.pack(anchor="w")
+        self.combo_ch.grid(row=0, column=0, sticky="w")
 
         # Formato
         f = ttk.LabelFrame(df, text="FORMATO", padding=10)
-        f.pack(fill="x", pady=(0, 10))
+        f.grid(row=3, column=0, sticky="ew", pady=(0, 10))
+        f.columnconfigure(0, weight=1)
         fmts = ["WAV"]
         try:
             subprocess.run(["ffmpeg", "-version"], capture_output=True, timeout=2)
             fmts.append("MP3")
         except Exception:
             pass
-        self.combo_fmt = ttk.Combobox(f, values=fmts, state="readonly", width=8)
+        self.combo_fmt = ttk.Combobox(f, values=fmts, state="readonly", width=10)
         self.combo_fmt.set("WAV")
-        self.combo_fmt.pack(anchor="w")
+        self.combo_fmt.grid(row=0, column=0, sticky="w")
 
         # Guardar em
         f = ttk.LabelFrame(df, text="GUARDAR EM", padding=10)
-        f.pack(fill="x", pady=(0, 10))
+        f.grid(row=4, column=0, sticky="ew", pady=(0, 10))
+        f.columnconfigure(0, weight=1)
         self.var_saida.set(self._saida_padrao())
         entry = ttk.Entry(f, textvariable=self.var_saida)
-        entry.pack(side="left", fill="x", expand=True)
-        ttk.Button(f, text="Escolher...", command=self._escolher_saida).pack(
-            side="left", padx=(8, 0))
+        entry.grid(row=0, column=0, sticky="ew")
+        ttk.Button(f, text="Escolher...", command=self._escolher_saida).grid(
+            row=0, column=1, padx=(8, 0))
 
     # -------------------------------------------------------- dispositivos
     def _listar_dispositivos(self):
@@ -326,10 +354,9 @@ class Recordinn(tk.Tk):
 
     def _iniciar_gravacao(self):
         self.frames = []
-        self._scroll_offset = 0
         self.gravando = True
         self.btn_gravar.configure(text="Parar", style="Stop.TButton")
-        self.btn_salvar.pack_forget()
+        self.btn_salvar.grid_forget()
         self.var_status.set("Gravando...")
         self.var_tempo.set("00:00.0")
 
@@ -381,7 +408,7 @@ class Recordinn(tk.Tk):
             duracao = len(self.dados_audio) / self.sample_rate
             self.var_status.set(f"Gravado: {duracao:.1f}s")
             self._desenhar_waveform()
-            self.btn_salvar.pack(side="left", padx=(10, 0))
+            self.btn_salvar.grid(row=0, column=1, sticky="w", padx=(10, 0))
         else:
             self.var_status.set("Gravacao vazia")
 
@@ -426,8 +453,8 @@ class Recordinn(tk.Tk):
     # --------------------------------------------------------- waveform
     def _desenhar_waveform(self, _evt=None):
         self.canvas.delete("all")
-        cw = max(50, self.canvas.winfo_width() - 4)
-        ch = max(50, self.canvas.winfo_height() - 4)
+        cw = max(50, self.canvas.winfo_width())
+        ch = max(50, self.canvas.winfo_height())
 
         if self.dados_audio is None:
             self.canvas.create_text(cw // 2, ch // 2,
@@ -462,8 +489,8 @@ class Recordinn(tk.Tk):
 
     def _desenhar_waveform_scroll(self):
         self.canvas.delete("all")
-        cw = max(50, self.canvas.winfo_width() - 4)
-        ch = max(50, self.canvas.winfo_height() - 4)
+        cw = max(50, self.canvas.winfo_width())
+        ch = max(50, self.canvas.winfo_height())
         mid = ch // 2
 
         dados = self.dados_audio.flatten()
@@ -599,20 +626,6 @@ class Recordinn(tk.Tk):
             pass
         finally:
             self.after(0, lambda: self.var_status.set("Pronto"))
-
-    # ------------------------------------------------------------ novo
-    def _novo(self):
-        if self.gravando:
-            self._parar_gravacao()
-        if self.tocando:
-            self._parar_tocar()
-        self.dados_audio = None
-        self.frames = []
-        self.var_tempo.set("00:00.0")
-        self.var_saida.set(self._saida_padrao())
-        self.var_status.set("Pronto")
-        self.btn_salvar.pack_forget()
-        self._desenhar_waveform()
 
 
 def main():
