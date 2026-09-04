@@ -86,6 +86,7 @@ class Recordinn(tk.Tk):
         self.canais = 1
         self.frames = []
         self.stream = None
+        self.tree = None
 
         self.var_status = tk.StringVar(value="Pronto")
         self.var_tempo = tk.StringVar(value="00:00.0")
@@ -96,7 +97,6 @@ class Recordinn(tk.Tk):
         self._centrar(900, 640)
         self._ligar_atalhos()
         self.after(200, self._listar_dispositivos)
-        self._carregar_historico()
 
     def _estilos(self):
         s = ttk.Style(self)
@@ -154,28 +154,28 @@ class Recordinn(tk.Tk):
         self.bind_all("<Control-r>", lambda _e: self._toggle_gravar())
         self.bind_all("<Control-p>", lambda _e: self._toggle_tocar())
         self.bind_all("<Control-s>", lambda _e: self._salvar())
-        self.bind_all("<Escape>", lambda _e: self._parar())
+        self.bind_all("<Escape>", lambda _e: self._fechar())
         self.protocol("WM_DELETE_WINDOW", self._fechar)
 
     def _construir_interface(self):
-        # Raiz principal com grid responsivo
         self.columnconfigure(0, weight=1)
         self.rowconfigure(0, weight=1)
 
         raiz = ttk.Frame(self, padding=(16, 12, 16, 8))
         raiz.grid(row=0, column=0, sticky="nsew")
         raiz.columnconfigure(0, weight=1)
-        raiz.rowconfigure(2, weight=1)
+        raiz.rowconfigure(1, weight=1)
 
         # Cabecalho
         ttk.Label(raiz, text=APP, style="Titulo.TLabel").grid(
             row=0, column=0, sticky="w")
         ttk.Label(raiz, text="Gravador de audio leve - 100% offline",
-                  style="Sub.TLabel").grid(row=1, column=0, sticky="w", pady=(0, 10))
+                  style="Sub.TLabel").grid(row=0, column=1, sticky="w", padx=(12, 0))
+        raiz.columnconfigure(1, weight=1)
 
         # Notebook
         self.notebook = ttk.Notebook(raiz)
-        self.notebook.grid(row=2, column=0, sticky="nsew")
+        self.notebook.grid(row=1, column=0, columnspan=2, sticky="nsew")
 
         aba_gravar = ttk.Frame(self.notebook)
         aba_definir = ttk.Frame(self.notebook)
@@ -184,7 +184,7 @@ class Recordinn(tk.Tk):
 
         # ============ ABA GRAVAR ============
         aba_gravar.columnconfigure(0, weight=1)
-        aba_gravar.rowconfigure(3, weight=1)
+        aba_gravar.rowconfigure(1, weight=1)
 
         # Timer
         f_timer = ttk.Frame(aba_gravar)
@@ -195,38 +195,9 @@ class Recordinn(tk.Tk):
         ttk.Label(f_timer, textvariable=self.var_tempo, style="Tempo.TLabel").grid(
             row=1, column=0, sticky="w")
 
-        # Historico
-        hist_frame = ttk.Frame(aba_gravar)
-        hist_frame.grid(row=1, column=0, sticky="ew", pady=(4, 0))
-        hist_frame.columnconfigure(0, weight=1)
-        ttk.Label(hist_frame, text="HISTORICO", style="Pista.TLabel").grid(
-            row=0, column=0, sticky="w")
-
-        tree_frame = ttk.Frame(hist_frame)
-        tree_frame.grid(row=1, column=0, sticky="ew")
-        tree_frame.columnconfigure(0, weight=1)
-        tree_frame.rowconfigure(0, weight=1)
-
-        self.tree = ttk.Treeview(tree_frame, columns=("nome", "data", "tam"),
-                                  show="headings", height=4)
-        self.tree.heading("nome", text="Ficheiro")
-        self.tree.heading("data", text="Data")
-        self.tree.heading("tam", text="Tamanho")
-        self.tree.column("nome", width=220, minwidth=120)
-        self.tree.column("data", width=140, minwidth=100)
-        self.tree.column("tam", width=80, minwidth=60)
-
-        tree_scroll = ttk.Scrollbar(tree_frame, orient="vertical",
-                                     command=self.tree.yview)
-        self.tree.configure(yscrollcommand=tree_scroll.set)
-
-        self.tree.grid(row=0, column=0, sticky="nsew")
-        tree_scroll.grid(row=0, column=1, sticky="ns")
-        self.tree.bind("<Double-1>", self._tocar_historico)
-
         # Waveform
         wf_frame = tk.Frame(aba_gravar, bg=BG_CARD)
-        wf_frame.grid(row=2, column=0, sticky="nsew", pady=(8, 0))
+        wf_frame.grid(row=1, column=0, sticky="nsew")
         wf_frame.columnconfigure(0, weight=1)
         wf_frame.rowconfigure(0, weight=1)
 
@@ -236,8 +207,8 @@ class Recordinn(tk.Tk):
 
         # Botoes em baixo
         b_frame = ttk.Frame(aba_gravar)
-        b_frame.grid(row=3, column=0, sticky="ew", pady=(10, 0))
-        b_frame.columnconfigure(1, weight=1)
+        b_frame.grid(row=2, column=0, sticky="ew", pady=(10, 0))
+        b_frame.columnconfigure(4, weight=1)
 
         self.btn_gravar = ttk.Button(b_frame, text="Gravar", style="Rec.TButton",
                                       command=self._toggle_gravar)
@@ -246,16 +217,19 @@ class Recordinn(tk.Tk):
 
         self.btn_tocar = ttk.Button(b_frame, text="Tocar", style="Play.TButton",
                                      command=self._toggle_tocar)
-        self.btn_tocar.grid(row=0, column=2, sticky="w", padx=(10, 0))
+        self.btn_tocar.grid(row=0, column=1, sticky="w", padx=(10, 0))
         ToolTip(self.btn_tocar, "Reproduzir ultimo audio (Ctrl+P)")
 
         self.btn_salvar = ttk.Button(b_frame, text="Salvar", style="Salvar.TButton",
                                       command=self._salvar)
         ToolTip(self.btn_salvar, "Guardar gravacao (Ctrl+S)")
 
+        ttk.Button(b_frame, text="Historico", command=self._abrir_historico).grid(
+            row=0, column=3, sticky="w", padx=(10, 0))
+
         self.lbl_status = ttk.Label(b_frame, textvariable=self.var_status,
                                      style="Status.TLabel", anchor="e")
-        self.lbl_status.grid(row=0, column=3, sticky="e")
+        self.lbl_status.grid(row=0, column=5, sticky="e")
 
         # ============ ABA DEFINICOES ============
         df = ttk.Frame(aba_definir, padding=20)
@@ -460,7 +434,7 @@ class Recordinn(tk.Tk):
             sd.stop()
         except Exception:
             pass
-        self.destroy()
+        self.after(10, self.destroy)
 
     # --------------------------------------------------------- waveform
     def _desenhar_waveform(self, _evt=None):
@@ -591,7 +565,53 @@ class Recordinn(tk.Tk):
                 os.remove(tmp_wav)
 
     # ---------------------------------------------------------- historico
+    def _abrir_historico(self):
+        janela = tk.Toplevel(self)
+        janela.title("Historico - Recordinn")
+        janela.geometry("600x400")
+        janela.configure(bg=BG)
+        janela.transient(self)
+        janela.grab_set()
+
+        janela.columnconfigure(0, weight=1)
+        janela.rowconfigure(1, weight=1)
+
+        ttk.Label(janela, text="Historico de Gravacoes",
+                  style="Titulo.TLabel").grid(row=0, column=0, sticky="w",
+                                               padx=14, pady=(14, 8))
+
+        frame = ttk.Frame(janela)
+        frame.grid(row=1, column=0, sticky="nsew", padx=14, pady=(0, 14))
+        frame.columnconfigure(0, weight=1)
+        frame.rowconfigure(0, weight=1)
+
+        self.tree = ttk.Treeview(frame, columns=("nome", "data", "tam"),
+                                  show="headings", height=15)
+        self.tree.heading("nome", text="Ficheiro")
+        self.tree.heading("data", text="Data")
+        self.tree.heading("tam", text="Tamanho")
+        self.tree.column("nome", width=250, minwidth=150)
+        self.tree.column("data", width=140, minwidth=100)
+        self.tree.column("tam", width=80, minwidth=60)
+
+        scroll = ttk.Scrollbar(frame, orient="vertical", command=self.tree.yview)
+        self.tree.configure(yscrollcommand=scroll.set)
+
+        self.tree.grid(row=0, column=0, sticky="nsew")
+        scroll.grid(row=0, column=1, sticky="ns")
+        self.tree.bind("<Double-1>", self._tocar_historico)
+
+        self._carregar_historico()
+
+        b_frame = ttk.Frame(janela)
+        b_frame.grid(row=2, column=0, sticky="ew", padx=14, pady=(0, 14))
+        ttk.Button(b_frame, text="Tocar", style="Play.TButton",
+                    command=lambda: self._tocar_historico(None)).pack(side="left")
+        ttk.Button(b_frame, text="Fechar", command=janela.destroy).pack(side="right")
+
     def _carregar_historico(self):
+        if self.tree is None:
+            return
         for item in self.tree.get_children():
             self.tree.delete(item)
 
