@@ -155,6 +155,7 @@ class Recordinn(tk.Tk):
         self.bind_all("<Control-p>", lambda _e: self._toggle_tocar())
         self.bind_all("<Control-s>", lambda _e: self._salvar())
         self.bind_all("<Escape>", lambda _e: self._parar())
+        self.protocol("WM_DELETE_WINDOW", self._fechar)
 
     def _construir_interface(self):
         # Raiz principal com grid responsivo
@@ -449,6 +450,17 @@ class Recordinn(tk.Tk):
             self._parar_gravacao()
         if self.tocando:
             self._parar_tocar()
+
+    def _fechar(self):
+        if self.gravando:
+            self._parar_gravacao()
+        if self.tocando:
+            self._parar_tocar()
+        try:
+            sd.stop()
+        except Exception:
+            pass
+        self.destroy()
 
     # --------------------------------------------------------- waveform
     def _desenhar_waveform(self, _evt=None):
